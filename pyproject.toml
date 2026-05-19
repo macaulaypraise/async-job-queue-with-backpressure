@@ -5,7 +5,7 @@ description = "Async job queue with backpressure and priority scheduling"
 authors = [{ name = "macaulaypraise", email = "Macaulaypraise37@gmail.com" }]
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = ["uvicorn (>=0.47.0,<0.48.0)", "fastapi (>=0.136.1,<0.137.0)"]
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
@@ -61,3 +61,6 @@ asyncio_default_fixture_loop_scope = "function"
 # --cov-report: show exactly which lines of code are missing tests in the terminal
 # addopts = "-v --cov=app --cov-report=term-missing"
 addopts = "--no-cov"
+
+[tool.poetry]
+package-mode = false
