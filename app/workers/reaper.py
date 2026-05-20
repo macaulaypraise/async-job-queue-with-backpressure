@@ -1,6 +1,7 @@
 import asyncio
-import logging
 import signal
+import structlog
+import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -8,7 +9,7 @@ from app.config import get_settings
 from app.core.redis_client import close_redis_client, create_redis_client
 from app.services.reaper_service import reap_zombie_jobs, recover_pending_messages
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 settings = get_settings()
 
 REAPER_INTERVAL_SECONDS = 10
@@ -28,7 +29,7 @@ async def run_reaper(stop_event: asyncio.Event) -> None:
     engine = create_async_engine(settings.database_url)
     SessionFactory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-    logger.info("Reaper started")
+    logger.info("reaper_started")
 
     try:
         while not stop_event.is_set():
@@ -36,16 +37,16 @@ async def run_reaper(stop_event: asyncio.Event) -> None:
                 # Recover messages from crashed workers
                 recovered = await recover_pending_messages(redis)
                 if recovered:
-                    logger.info(f"Reaper recovered {recovered} pending messages")
+                    logger.info("reaper_recovered", count=recovered)
 
                 # Reap zombie jobs (stale heartbeats)
                 async with SessionFactory() as db:
                     reaped = await reap_zombie_jobs(db, redis)
                     if reaped:
-                        logger.info(f"Reaper marked {reaped} zombie jobs as failed")
+                        logger.info("reaper_zombie_reaped", count=reaped)
 
             except Exception as e:
-                logger.error(f"Reaper error: {e}", exc_info=True)
+                logger.error("reaper_error", error=str(e))
 
             # Wait before next cycle — interruptible by stop_event
             try:
@@ -59,7 +60,7 @@ async def run_reaper(stop_event: asyncio.Event) -> None:
     finally:
         await close_redis_client(redis)
         await engine.dispose()
-        logger.info("Reaper stopped")
+        logger.info("reaper_stopped")
 
 
 async def main() -> None:

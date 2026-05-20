@@ -5,6 +5,8 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.job import Job, JobPriority, JobStatus
+import structlog
+logger = structlog.get_logger()
 
 
 async def create_job(
@@ -23,6 +25,7 @@ async def create_job(
     )
     db.add(job)
     await db.flush()  # writes to DB within the current transaction
+    logger.info("job_created", job_id=str(job.id), priority=priority)
     return job
 
 
@@ -56,6 +59,7 @@ async def mark_completed(
         .where(Job.id == job_id)
         .values(status=JobStatus.COMPLETED, result=result)
     )
+    logger.info("job_completed", job_id=str(job_id))
 
 
 async def mark_failed(

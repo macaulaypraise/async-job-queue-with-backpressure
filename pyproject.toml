@@ -14,6 +14,7 @@ dependencies = [
   "alembic (>=1.18.4,<2.0.0)",
   "redis[hiredis] (>=7.4.0,<8.0.0)",
   "prometheus-client (>=0.25.0,<0.26.0)",
+  "structlog (>=25.5.0,<26.0.0)",
 ]
 
 [build-system]

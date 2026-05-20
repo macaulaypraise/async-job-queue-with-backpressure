@@ -7,9 +7,14 @@ from redis.asyncio import Redis
 from app.config import get_settings
 from app.services.scheduler import QUEUE_NAMES, get_weights, pick_queue
 from app.core.exceptions import BackpressureError
+import structlog
+logger = structlog.get_logger()
+
 
 CONSUMER_GROUP = "job-workers"
-
+QUEUE_DLQ = "queue:dlq"
+DLQ_CONSUMER_GROUP = "dlq-workers"
+BACKPRESSURE_STATE_KEY = "backpressure:active"
 
 @dataclass
 class QueueMessage:
@@ -37,24 +42,42 @@ async def enqueue(redis: Redis, job_id: str, payload: dict, priority: str) -> st
     """
     Push a job onto the appropriate priority stream.
 
-    Checks queue depth against the high watermark before accepting.
-    Raises BackpressureError if the queue is too full.
+    Uses a two-watermark band to prevent oscillation:
+    - If total depth >= HIGH_WATERMARK → enter backpressure, reject
+    - If in backpressure AND depth >= LOW_WATERMARK → stay rejected
+    - If in backpressure AND depth < LOW_WATERMARK → exit backpressure, accept
 
+    Raises BackpressureError if currently rejecting.
     Returns the Redis stream message ID.
     """
     settings = get_settings()
     stream = QUEUE_NAMES.get(priority, QUEUE_NAMES["normal"])
 
-    # Backpressure check — count pending messages across all streams
+    # Count total depth across all streams
     total_depth = 0
     for s in QUEUE_NAMES.values():
         try:
-            info = await redis.xlen(s)
-            total_depth += info
+            total_depth += await redis.xlen(s)
         except Exception:
             pass
 
-    if total_depth >= settings.high_watermark:
+    # Check whether we're currently in backpressure state
+    in_backpressure = await redis.exists(BACKPRESSURE_STATE_KEY)
+
+    if in_backpressure:
+        if total_depth >= settings.low_watermark:
+            # Still above low watermark — stay in backpressure
+            raise BackpressureError(
+                f"Queue depth {total_depth} still above low watermark "
+                f"{settings.low_watermark}. Retry later."
+            )
+        else:
+            # Drained below low watermark — exit backpressure
+            await redis.delete(BACKPRESSURE_STATE_KEY)
+
+    elif total_depth >= settings.high_watermark:
+        # Crossed high watermark — enter backpressure
+        await redis.set(BACKPRESSURE_STATE_KEY, "1", ex=300)  # 5min TTL as safety
         raise BackpressureError(
             f"Queue depth {total_depth} exceeds high watermark "
             f"{settings.high_watermark}. Retry later."
@@ -70,6 +93,7 @@ async def enqueue(redis: Redis, job_id: str, payload: dict, priority: str) -> st
             "priority": priority,
         },
     )
+    logger.info("job_enqueued", job_id=job_id, priority=priority, stream=stream)
     return message_id
 
 
@@ -149,3 +173,81 @@ async def ensure_all_consumer_groups(redis: Redis) -> None:
     """
     for stream in QUEUE_NAMES.values():
         await _ensure_consumer_group(redis, stream)
+
+async def enqueue_dlq(
+    redis: Redis,
+    job_id: str,
+    payload: dict,
+    priority: str,
+    error: str,
+    retry_count: int,
+) -> str:
+    """
+    Move a permanently failed job to the Dead Letter Queue.
+
+    Called when retry_count >= max_retries. The DLQ is a separate
+    Redis Stream that holds jobs for human investigation and manual replay.
+    It does NOT have a consumer group — messages sit there until acted on.
+
+    Returns the DLQ stream message ID.
+    """
+    try:
+        await redis.xgroup_create(QUEUE_DLQ, DLQ_CONSUMER_GROUP, id="0", mkstream=True)
+    except Exception as e:
+        if "BUSYGROUP" not in str(e):
+            raise
+
+    message_id = await redis.xadd(
+        QUEUE_DLQ,
+        {
+            "job_id": job_id,
+            "payload": json.dumps(payload),
+            "priority": priority,
+            "error": error,
+            "retry_count": str(retry_count),
+        },
+    )
+    logger.warning("job_sent_to_dlq", job_id=job_id, retry_count=retry_count, error=error)
+    return message_id
+
+
+async def get_dlq_depth(redis: Redis) -> int:
+    """Returns the current number of messages in the Dead Letter Queue."""
+    try:
+        return await redis.xlen(QUEUE_DLQ)
+    except Exception:
+        return 0
+
+
+async def replay_dlq_message(redis: Redis, message_id: str) -> str | None:
+    """
+    Read one message from the DLQ by ID and re-enqueue it to its
+    original priority stream so workers can pick it up again.
+
+    Used by the POST /queues/dlq/{message_id}/replay endpoint.
+    Returns the new stream message ID, or None if the message wasn't found.
+    """
+    # Read the specific message from the DLQ stream
+    results = await redis.xrange(QUEUE_DLQ, min=message_id, max=message_id)
+    if not results:
+        return None
+
+    msg_id, data = results[0]
+
+    # Re-enqueue to the original priority stream
+    new_message_id = await enqueue(
+        redis,
+        job_id=data["job_id"],
+        payload=json.loads(data["payload"]),
+        priority=data["priority"],
+    )
+
+    # Remove from DLQ — it's been replayed
+    await redis.xdel(QUEUE_DLQ, msg_id)
+
+    return new_message_id
+
+
+async def is_in_backpressure(redis: Redis) -> bool:
+    """Returns True if the system is currently rejecting new jobs."""
+    return bool(await redis.exists(BACKPRESSURE_STATE_KEY))

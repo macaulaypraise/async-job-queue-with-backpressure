@@ -4,8 +4,12 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from prometheus_client import make_asgi_app
 
+from app.core.logging import configure_logging
 from app.core.redis_client import close_redis_client, create_redis_client
 from app.routers import jobs, queues
+
+# Configure structured logging before anything else runs
+configure_logging()
 
 
 @asynccontextmanager

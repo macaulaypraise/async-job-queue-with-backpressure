@@ -108,3 +108,52 @@ async def test_queue_metrics_reflect_submitted_jobs(client, redis):
     after_total = after.json()["total"]
 
     assert after_total >= before_total + 2
+
+
+async def test_low_watermark_resumes_acceptance(client, redis):
+    """
+    Once the queue drains below LOW_WATERMARK, the system must
+    resume accepting jobs — not stay locked in backpressure state.
+
+    This proves the band works: single-threshold designs oscillate
+    rapidly; the band prevents that.
+    """
+    from app.services.queue_service import (
+        BACKPRESSURE_STATE_KEY,
+        QUEUE_NAMES,
+        _ensure_consumer_group,
+    )
+    from app.config import get_settings
+
+    settings = get_settings()
+
+    # Manually set the backpressure flag (simulates queue having been full)
+    await redis.set(BACKPRESSURE_STATE_KEY, "1", ex=60)
+
+    # Fill queue to just above LOW_WATERMARK — should still reject
+    stream = QUEUE_NAMES["normal"]
+    await _ensure_consumer_group(redis, stream)
+    pipeline = redis.pipeline()
+    for i in range(settings.low_watermark + 10):
+        pipeline.xadd(stream, {"job_id": f"fake-{i}", "payload": "{}", "priority": "normal"})
+    await pipeline.execute()
+
+    response = await client.post(
+        "/jobs",
+        json={"payload": {"type": "send_email"}, "priority": "normal"},
+    )
+    assert response.status_code == 503, "Should still reject above low watermark"
+
+    # Now drain the queue below low watermark
+    await redis.delete(stream)
+
+    # Should now accept (depth is 0, below low watermark)
+    response = await client.post(
+        "/jobs",
+        json={"payload": {"type": "send_email"}, "priority": "normal"},
+    )
+    assert response.status_code == 202, "Should accept once below low watermark"
+
+    # Backpressure flag should be cleared
+    still_active = await redis.exists(BACKPRESSURE_STATE_KEY)
+    assert not still_active

@@ -1,15 +1,15 @@
 import asyncio
-import logging
 import signal
 import uuid
-
+import structlog
+import logging
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.config import get_settings
 from app.core.redis_client import close_redis_client, create_redis_client
 from app.services import job_service, queue_service, worker_service
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 settings = get_settings()
 
 # Each worker process gets a unique ID so we can track which worker ran which job
@@ -25,7 +25,7 @@ async def run_worker(worker_id: str, stop_event: asyncio.Event) -> None:
     from app.services.queue_service import ensure_all_consumer_groups
     await ensure_all_consumer_groups(redis)
 
-    logger.info(f"Worker {worker_id} started")
+    logger.info("worker_started", worker_id=worker_id)
 
     try:
         while not stop_event.is_set():
@@ -42,13 +42,13 @@ async def run_worker(worker_id: str, stop_event: asyncio.Event) -> None:
                         await asyncio.sleep(0.1)
 
                 except Exception as e:
-                    logger.error(f"Worker {worker_id} error: {e}", exc_info=True)
+                    logger.error("worker_error", worker_id=worker_id, error=str(e))
                     await asyncio.sleep(1)  # back off on unexpected errors
 
     finally:
         await close_redis_client(redis)
         await engine.dispose()
-        logger.info(f"Worker {worker_id} stopped")
+        logger.info("worker_stopped", worker_id=worker_id)
 
 
 async def main() -> None:
@@ -71,9 +71,9 @@ async def main() -> None:
         for i in range(settings.worker_count)
     ]
 
-    logger.info(f"Started {settings.worker_count} workers")
+    logger.info("all_workers_started", count=settings.worker_count)
     await asyncio.gather(*workers, return_exceptions=True)
-    logger.info("All workers stopped")
+    logger.info("all_workers_stopped")
 
 
 if __name__ == "__main__":

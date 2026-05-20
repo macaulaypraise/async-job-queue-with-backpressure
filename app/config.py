@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     # Worker settings
     max_retries: int = 5
     worker_count: int = 4
+    job_timeout_seconds: int = 30
 
     # Priority weights (must sum to 100)
     weight_critical: int = 60

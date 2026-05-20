@@ -1,4 +1,6 @@
 import asyncio
+import json
+import structlog
 
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,58 +13,67 @@ from app.services.queue_service import (
     enqueue,
 )
 
-# How long a message can sit in PENDING before we consider the worker dead
-VISIBILITY_TIMEOUT_MS = 30_000  # 30 seconds
+logger = structlog.get_logger()
+
+# Visibility timeouts per priority — matches the architecture diagram.
+# Critical jobs are re-queued fastest; normal jobs get more time before
+# the reaper intervenes, reducing unnecessary requeues for slow-but-alive workers.
+VISIBILITY_TIMEOUTS_MS: dict[str, int] = {
+    "critical": 30_000,   # 30 seconds
+    "high":     60_000,   # 60 seconds
+    "normal":  120_000,   # 120 seconds
+}
 
 
 async def recover_pending_messages(redis: Redis) -> int:
     """
-    Find messages claimed by workers but not acknowledged within the
-    visibility timeout. Re-enqueue them so another worker can pick them up.
+    Find messages claimed by workers but not acknowledged within their
+    priority-specific visibility timeout. Re-enqueue them so another
+    worker can process them.
 
-    This is how crashed workers are handled — their in-flight jobs
-    automatically reappear for processing.
-
+    Critical jobs are recovered after 30s, high after 60s, normal after 120s.
     Returns the count of messages recovered.
     """
     recovered = 0
 
     for priority, stream in QUEUE_NAMES.items():
+        timeout_ms = VISIBILITY_TIMEOUTS_MS[priority]
+        recovered_this_stream = 0   # ← track per stream
+
         try:
             pending = await redis.xpending_range(
-                stream,
-                CONSUMER_GROUP,
-                min="-",
-                max="+",
-                count=100,
-                idle=VISIBILITY_TIMEOUT_MS,
+                stream, CONSUMER_GROUP,
+                min="-", max="+",
+                count=100, idle=timeout_ms,
             )
 
             for entry in pending:
                 message_id = entry["message_id"]
-
-                # Claim the stale message so we can inspect it
                 claimed = await redis.xautoclaim(
-                    stream,
-                    CONSUMER_GROUP,
-                    "reaper",
-                    min_idle_time=VISIBILITY_TIMEOUT_MS,
-                    start_id=message_id,
-                    count=1,
+                    stream, CONSUMER_GROUP, "reaper",
+                    min_idle_time=timeout_ms,
+                    start_id=message_id, count=1,
                 )
-
                 if claimed and claimed[1]:
                     _, messages = claimed[0], claimed[1]
                     for msg_id, data in messages:
-                        # Acknowledge the stale message and re-enqueue
                         await acknowledge(redis, stream, msg_id)
                         await enqueue(
                             redis,
                             job_id=data["job_id"],
-                            payload=__import__("json").loads(data["payload"]),
+                            payload=json.loads(data["payload"]),
                             priority=data["priority"],
                         )
+                        recovered_this_stream += 1
                         recovered += 1
+
+            if recovered_this_stream:     # ← now inside the for loop, after the try block
+                logger.info(
+                    "reaper_recovered_messages",
+                    stream=stream,
+                    count=recovered_this_stream,
+                    timeout_ms=timeout_ms,
+                )
 
         except Exception:
             continue
@@ -74,7 +85,6 @@ async def reap_zombie_jobs(db: AsyncSession, redis: Redis) -> int:
     """
     Find RUNNING jobs with stale heartbeats and mark them FAILED.
     These jobs will be recovered by recover_pending_messages on the next cycle.
-
     Returns the count of zombies reaped.
     """
     zombies = await job_service.find_zombie_jobs(db, max_heartbeat_age_seconds=60)
