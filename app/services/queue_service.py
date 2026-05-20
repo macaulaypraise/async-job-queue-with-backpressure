@@ -6,13 +6,9 @@ from redis.asyncio import Redis
 
 from app.config import get_settings
 from app.services.scheduler import QUEUE_NAMES, get_weights, pick_queue
+from app.core.exceptions import BackpressureError
 
 CONSUMER_GROUP = "job-workers"
-
-
-class BackpressureError(Exception):
-    """Raised when the queue depth exceeds the high watermark."""
-    pass
 
 
 @dataclass
@@ -143,3 +139,13 @@ async def get_pending_messages(redis: Redis, stream: str, min_idle_ms: int):
         count=100,
         idle=min_idle_ms,
     )
+
+
+async def ensure_all_consumer_groups(redis: Redis) -> None:
+    """
+    Create consumer groups for all priority streams at startup.
+    Called by the worker before entering its processing loop.
+    Without this, XREADGROUP fails if no job has been enqueued yet.
+    """
+    for stream in QUEUE_NAMES.values():
+        await _ensure_consumer_group(redis, stream)

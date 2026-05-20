@@ -1,8 +1,9 @@
 services:
   app:
     build: .
-    ports:
-      - "8000:8000"
+    command: >
+      sh -c "poetry run alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     environment:
       - APP_ENV=development
       - REDIS_URL=redis://redis:6379/0
@@ -18,6 +19,54 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+
+  job_worker:
+    build: .
+    command: python -m app.workers.job_worker
+    environment:
+      - APP_ENV=development
+      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/jobqueue
+      - WORKER_COUNT=2
+      - MAX_RETRIES=5
+      - WEIGHT_CRITICAL=60
+      - WEIGHT_HIGH=30
+      - WEIGHT_NORMAL=10
+      - HIGH_WATERMARK=10000
+      - LOW_WATERMARK=2000
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - .:/app
+
+  reaper:
+    build: .
+    command: python -m app.workers.reaper
+    environment:
+      - APP_ENV=development
+      - REDIS_URL=redis://redis:6379/0
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/jobqueue
+      - HIGH_WATERMARK=10000
+      - LOW_WATERMARK=2000
+      - MAX_RETRIES=5
+      - WEIGHT_CRITICAL=60
+      - WEIGHT_HIGH=30
+      - WEIGHT_NORMAL=10
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
     volumes:
       - .:/app
 
