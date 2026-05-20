@@ -1,15 +1,19 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request          # ← add Request here
-from fastapi.responses import JSONResponse   # ← move this import to the top
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+from prometheus_client import make_asgi_app
 
 from app.core.redis_client import close_redis_client, create_redis_client
+from app.routers import jobs, queues
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Startup
     app.state.redis = await create_redis_client()
     yield
+    # Shutdown
     await close_redis_client(app.state.redis)
 
 
@@ -20,10 +24,18 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Routers
+app.include_router(jobs.router)
+app.include_router(queues.router)
 
-@app.get("/health")
-async def health(request: Request):          # ← Request type hint is the fix
-    status = {"status": "ok", "redis": "ok", "postgres": "ok"}
+# Prometheus metrics endpoint
+metrics_app = make_asgi_app()
+app.mount("/metrics", metrics_app)
+
+
+@app.get("/health", tags=["ops"])
+async def health(request: Request):
+    status = {"status": "ok", "redis": "ok"}
     http_status = 200
 
     try:

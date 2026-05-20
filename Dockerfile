@@ -6,9 +6,13 @@ RUN pip install --no-cache-dir --default-timeout=100 "poetry>=2.1.3,<3.0.0"
 
 COPY pyproject.toml poetry.lock* README.md ./
 
-RUN poetry config virtualenvs.create false \
-    && poetry install --no-interaction --no-ansi
+ENV POETRY_INSTALLER_MAX_WORKERS=1 \
+    POETRY_REQUESTS_TIMEOUT=120 \
+    POETRY_RETRIES=5
 
+
+RUN poetry config virtualenvs.create false \
+    && poetry install --only main --no-interaction --no-ansi --no-root
 
 COPY . .
 
