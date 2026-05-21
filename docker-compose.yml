@@ -2,7 +2,7 @@ services:
   app:
     build: .
     command: >
-      sh -c "poetry run alembic upgrade head &&
+      sh -c "alembic upgrade head &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     environment:
       - APP_ENV=development
@@ -11,6 +11,7 @@ services:
       - HIGH_WATERMARK=10000
       - LOW_WATERMARK=2000
       - MAX_RETRIES=5
+      - JOB_TIMEOUT_SECONDS=30
       - WEIGHT_CRITICAL=60
       - WEIGHT_HIGH=30
       - WEIGHT_NORMAL=10
@@ -22,6 +23,7 @@ services:
     restart: unless-stopped
     volumes:
       - .:/app
+      - venv:/app/.venv
     ports:
       - "8000:8000"
 
@@ -34,6 +36,7 @@ services:
       - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/jobqueue
       - WORKER_COUNT=2
       - MAX_RETRIES=5
+      - JOB_TIMEOUT_SECONDS=30
       - WEIGHT_CRITICAL=60
       - WEIGHT_HIGH=30
       - WEIGHT_NORMAL=10
@@ -47,6 +50,7 @@ services:
     restart: unless-stopped
     volumes:
       - .:/app
+      - venv:/app/.venv
 
   reaper:
     build: .
@@ -58,6 +62,7 @@ services:
       - HIGH_WATERMARK=10000
       - LOW_WATERMARK=2000
       - MAX_RETRIES=5
+      - JOB_TIMEOUT_SECONDS=30
       - WEIGHT_CRITICAL=60
       - WEIGHT_HIGH=30
       - WEIGHT_NORMAL=10
@@ -69,6 +74,7 @@ services:
     restart: unless-stopped
     volumes:
       - .:/app
+      - venv:/app/.venv
 
   redis:
     image: redis:7-alpine
@@ -103,5 +109,34 @@ services:
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
 
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    depends_on:
+      - prometheus
+
+  locust:
+    image: locustio/locust:latest
+    ports:
+      - "8089:8089"
+    volumes:
+      - ./tests/load:/mnt/locust
+    command: >
+      -f /mnt/locust/locustfile.py
+      --host http://app:8000
+    depends_on:
+      - app
+    profiles:
+      - load   # only starts with: docker compose --profile load up
+
 volumes:
   postgres_data:
+  venv:
+  grafana_data:

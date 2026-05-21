@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
+from typing import Any
 
 from sqlalchemy import DateTime, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSON, UUID
@@ -9,14 +10,14 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base
 
 
-class JobStatus(str, Enum):
+class JobStatus(StrEnum):
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
 
 
-class JobPriority(str, Enum):
+class JobPriority(StrEnum):
     CRITICAL = "critical"
     HIGH = "high"
     NORMAL = "normal"
@@ -33,8 +34,8 @@ class Job(Base):
     )
 
     # What the job does
-    payload: Mapped[dict] = mapped_column(JSON, nullable=False)
-    result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    result: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
     # Routing and scheduling
     priority: Mapped[str] = mapped_column(

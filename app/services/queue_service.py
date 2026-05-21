@@ -1,13 +1,14 @@
 import json
-import uuid
 from dataclasses import dataclass
+from typing import Any, cast
 
+import structlog
 from redis.asyncio import Redis
 
 from app.config import get_settings
-from app.services.scheduler import QUEUE_NAMES, get_weights, pick_queue
 from app.core.exceptions import BackpressureError
-import structlog
+from app.services.scheduler import QUEUE_NAMES, get_weights, pick_queue
+
 logger = structlog.get_logger()
 
 
@@ -16,13 +17,15 @@ QUEUE_DLQ = "queue:dlq"
 DLQ_CONSUMER_GROUP = "dlq-workers"
 BACKPRESSURE_STATE_KEY = "backpressure:active"
 
+
 @dataclass
 class QueueMessage:
     """A single message read from a Redis Stream."""
+
     message_id: str
     stream: str
     job_id: str
-    payload: dict
+    payload: dict[str, Any]
     priority: str
 
 
@@ -38,7 +41,9 @@ async def _ensure_consumer_group(redis: Redis, stream: str) -> None:
             raise
 
 
-async def enqueue(redis: Redis, job_id: str, payload: dict, priority: str) -> str:
+async def enqueue(
+    redis: Redis, job_id: str, payload: dict[str, Any], priority: str
+) -> str:
     """
     Push a job onto the appropriate priority stream.
 
@@ -94,7 +99,7 @@ async def enqueue(redis: Redis, job_id: str, payload: dict, priority: str) -> st
         },
     )
     logger.info("job_enqueued", job_id=job_id, priority=priority, stream=stream)
-    return message_id
+    return cast(str, message_id)
 
 
 async def dequeue(redis: Redis, consumer_name: str) -> QueueMessage | None:
@@ -149,19 +154,24 @@ async def get_queue_depths(redis: Redis) -> dict[str, int]:
     return depths
 
 
-async def get_pending_messages(redis: Redis, stream: str, min_idle_ms: int):
+async def get_pending_messages(
+    redis: Redis, stream: str, min_idle_ms: int
+) -> list[Any]:
     """
     Returns messages that have been delivered but not acknowledged
     and have been idle for at least min_idle_ms milliseconds.
     Used by the reaper to find crashed-worker jobs.
     """
-    return await redis.xpending_range(
-        stream,
-        CONSUMER_GROUP,
-        min="-",
-        max="+",
-        count=100,
-        idle=min_idle_ms,
+    return cast(
+        list[Any],
+        await redis.xpending_range(
+            stream,
+            CONSUMER_GROUP,
+            min="-",
+            max="+",
+            count=100,
+            idle=min_idle_ms,
+        ),
     )
 
 
@@ -174,10 +184,11 @@ async def ensure_all_consumer_groups(redis: Redis) -> None:
     for stream in QUEUE_NAMES.values():
         await _ensure_consumer_group(redis, stream)
 
+
 async def enqueue_dlq(
     redis: Redis,
     job_id: str,
-    payload: dict,
+    payload: dict[str, Any],
     priority: str,
     error: str,
     retry_count: int,
@@ -207,14 +218,16 @@ async def enqueue_dlq(
             "retry_count": str(retry_count),
         },
     )
-    logger.warning("job_sent_to_dlq", job_id=job_id, retry_count=retry_count, error=error)
-    return message_id
+    logger.warning(
+        "job_sent_to_dlq", job_id=job_id, retry_count=retry_count, error=error
+    )
+    return cast(str, message_id)
 
 
 async def get_dlq_depth(redis: Redis) -> int:
     """Returns the current number of messages in the Dead Letter Queue."""
     try:
-        return await redis.xlen(QUEUE_DLQ)
+        return cast(int, await redis.xlen(QUEUE_DLQ))
     except Exception:
         return 0
 

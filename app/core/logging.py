@@ -8,8 +8,10 @@ All log lines include timestamp, level, and any key=value pairs passed
 to the log call. In production these are emitted as JSON. In development
 they are rendered as colored console output for readability.
 """
+
 import logging
 import sys
+from typing import Any
 
 import structlog
 
@@ -25,13 +27,15 @@ def configure_logging() -> None:
     settings = get_settings()
     is_dev = settings.app_env == "development"
 
-    shared_processors = [
+    # Explicitly type the list to prevent Mypy from inferring list[object]
+    shared_processors: list[Any] = [
         structlog.contextvars.merge_contextvars,
         structlog.stdlib.add_log_level,
         structlog.processors.TimeStamper(fmt="iso"),
         structlog.processors.StackInfoRenderer(),
     ]
 
+    processors: list[Any]
     if is_dev:
         processors = shared_processors + [
             structlog.dev.ConsoleRenderer(colors=True),

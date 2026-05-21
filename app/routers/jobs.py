@@ -1,9 +1,10 @@
 import uuid
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, HTTPException
 
-from app.core.exceptions import BackpressureError, JobNotFoundError
+from app.core.exceptions import BackpressureError
 from app.dependencies import DbDep, RedisDep
+from app.models.job import Job
 from app.schemas.job import JobCreate, JobResponse
 from app.services import job_service, queue_service
 
@@ -11,7 +12,7 @@ router = APIRouter(prefix="/jobs", tags=["jobs"])
 
 
 @router.post("", status_code=202, response_model=JobResponse)
-async def create_job(body: JobCreate, db: DbDep, redis: RedisDep):
+async def create_job(body: JobCreate, db: DbDep, redis: RedisDep) -> Job:
     """
     Submit a new job to the queue.
 
@@ -47,7 +48,7 @@ async def create_job(body: JobCreate, db: DbDep, redis: RedisDep):
 
 
 @router.get("/{job_id}", response_model=JobResponse)
-async def get_job(job_id: uuid.UUID, db: DbDep):
+async def get_job(job_id: uuid.UUID, db: DbDep) -> Job:
     """
     Fetch the current status and result of a job.
     Poll this endpoint to check if your job has completed.

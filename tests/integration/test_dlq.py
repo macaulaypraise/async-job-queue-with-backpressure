@@ -1,7 +1,6 @@
 """
 Tests for the Dead Letter Queue — the safety net for permanently failed jobs.
 """
-from unittest.mock import AsyncMock, patch
 
 
 async def test_exhausted_job_appears_in_dlq(client, redis):
@@ -9,7 +8,8 @@ async def test_exhausted_job_appears_in_dlq(client, redis):
     A job that fails and has max_retries=0 must land in the DLQ stream,
     not silently disappear.
     """
-    from app.services.queue_service import QUEUE_DLQ, ensure_all_consumer_groups
+    from app.services.queue_service import ensure_all_consumer_groups
+
     await ensure_all_consumer_groups(redis)
 
     # Submit a job with max_retries=1 that will always fail
@@ -21,12 +21,9 @@ async def test_exhausted_job_appears_in_dlq(client, redis):
     job_id = response.json()["id"]
 
     # Simulate the worker exhausting retries by calling mark_failed directly
-    from app.core.database import AsyncSession, async_sessionmaker, create_async_engine
-    from app.config import get_settings
-    from app.services import job_service
     from app.services.queue_service import enqueue_dlq, get_dlq_depth
 
-    settings = get_settings()
+    # settings = get_settings()
 
     dlq_depth_before = await get_dlq_depth(redis)
 
@@ -74,7 +71,7 @@ async def test_replay_dlq_message(client, redis):
     Replaying a DLQ message must move it back to the main queue
     and remove it from the DLQ stream.
     """
-    from app.services.queue_service import enqueue_dlq, get_dlq_depth, QUEUE_DLQ
+    from app.services.queue_service import enqueue_dlq, get_dlq_depth
 
     # Add a message to DLQ
     msg_id = await enqueue_dlq(

@@ -2,9 +2,6 @@
 Critical tests for the three most important behaviors of the job queue.
 These are the tests to show interviewers.
 """
-import asyncio
-
-import pytest
 
 
 async def test_backpressure_503_when_queue_full(client, redis):
@@ -27,7 +24,9 @@ async def test_backpressure_503_when_queue_full(client, redis):
     # Add enough messages to exceed the watermark
     pipeline = redis.pipeline()
     for i in range(settings.high_watermark + 1):
-        pipeline.xadd(stream, {"job_id": f"fake-{i}", "payload": "{}", "priority": "normal"})
+        pipeline.xadd(
+            stream, {"job_id": f"fake-{i}", "payload": "{}", "priority": "normal"}
+        )
     await pipeline.execute()
 
     # Now submitting a real job should be rejected
@@ -49,6 +48,7 @@ async def test_priority_distribution_matches_weights(client, redis):
     jobs always get some capacity (no starvation).
     """
     from collections import Counter
+
     from app.services.scheduler import get_weights, pick_queue
 
     weights = await get_weights(redis)
@@ -83,6 +83,7 @@ async def test_job_appears_in_pending_after_submission(client, redis):
 
     # Check the stream has the message
     from app.services.queue_service import QUEUE_NAMES
+
     depth = await redis.xlen(QUEUE_NAMES["critical"])
     assert depth >= 1
 
@@ -118,12 +119,12 @@ async def test_low_watermark_resumes_acceptance(client, redis):
     This proves the band works: single-threshold designs oscillate
     rapidly; the band prevents that.
     """
+    from app.config import get_settings
     from app.services.queue_service import (
         BACKPRESSURE_STATE_KEY,
         QUEUE_NAMES,
         _ensure_consumer_group,
     )
-    from app.config import get_settings
 
     settings = get_settings()
 
@@ -135,7 +136,9 @@ async def test_low_watermark_resumes_acceptance(client, redis):
     await _ensure_consumer_group(redis, stream)
     pipeline = redis.pipeline()
     for i in range(settings.low_watermark + 10):
-        pipeline.xadd(stream, {"job_id": f"fake-{i}", "payload": "{}", "priority": "normal"})
+        pipeline.xadd(
+            stream, {"job_id": f"fake-{i}", "payload": "{}", "priority": "normal"}
+        )
     await pipeline.execute()
 
     response = await client.post(

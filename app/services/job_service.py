@@ -1,17 +1,19 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import Any
 
+import structlog
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.job import Job, JobPriority, JobStatus
-import structlog
+
 logger = structlog.get_logger()
 
 
 async def create_job(
     db: AsyncSession,
-    payload: dict,
+    payload: dict[str, Any],
     priority: str = JobPriority.NORMAL,
     max_retries: int = 5,
 ) -> Job:
@@ -35,9 +37,7 @@ async def get_job(db: AsyncSession, job_id: uuid.UUID) -> Job | None:
     return result.scalar_one_or_none()
 
 
-async def mark_running(
-    db: AsyncSession, job_id: uuid.UUID, worker_id: str
-) -> None:
+async def mark_running(db: AsyncSession, job_id: uuid.UUID, worker_id: str) -> None:
     """Transition job to RUNNING and record which worker claimed it."""
     await db.execute(
         update(Job)
@@ -45,13 +45,13 @@ async def mark_running(
         .values(
             status=JobStatus.RUNNING,
             worker_id=worker_id,
-            heartbeat_at=datetime.now(timezone.utc),
+            heartbeat_at=datetime.now(UTC),
         )
     )
 
 
 async def mark_completed(
-    db: AsyncSession, job_id: uuid.UUID, result: dict
+    db: AsyncSession, job_id: uuid.UUID, result: dict[str, Any]
 ) -> None:
     """Transition job to COMPLETED and store the result."""
     await db.execute(
@@ -84,9 +84,7 @@ async def update_heartbeat(db: AsyncSession, job_id: uuid.UUID) -> None:
     A stale heartbeat means the worker crashed — the reaper handles this.
     """
     await db.execute(
-        update(Job)
-        .where(Job.id == job_id)
-        .values(heartbeat_at=datetime.now(timezone.utc))
+        update(Job).where(Job.id == job_id).values(heartbeat_at=datetime.now(UTC))
     )
 
 

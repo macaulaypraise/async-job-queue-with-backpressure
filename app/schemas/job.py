@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, field_validator
 
 class JobCreate(BaseModel):
     """Request body for POST /jobs."""
+
     payload: dict[str, Any]
     priority: str = "normal"
 
@@ -21,6 +22,7 @@ class JobCreate(BaseModel):
 
 class JobResponse(BaseModel):
     """Response body for job endpoints."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
@@ -46,6 +48,7 @@ class QueueDepthResponse(BaseModel):
 
 class WeightUpdateRequest(BaseModel):
     """Request body for PATCH /queues/weights."""
+
     critical: int
     high: int
     normal: int
@@ -57,7 +60,7 @@ class WeightUpdateRequest(BaseModel):
             raise ValueError("Weight must be non-negative")
         return v
 
-    def model_post_init(self, __context) -> None:
+    def model_post_init(self, __context: Any) -> None:
         total = self.critical + self.high + self.normal
         if total != 100:
             raise ValueError(f"Weights must sum to 100, got {total}")
@@ -65,6 +68,7 @@ class WeightUpdateRequest(BaseModel):
 
 class WeightResponse(BaseModel):
     """Response body for weight endpoints."""
+
     critical: int
     high: int
     normal: int

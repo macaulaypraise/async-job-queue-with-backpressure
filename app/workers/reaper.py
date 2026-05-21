@@ -1,8 +1,8 @@
 import asyncio
-import signal
-import structlog
 import logging
+import signal
 
+import structlog
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.config import get_settings
@@ -27,7 +27,9 @@ async def run_reaper(stop_event: asyncio.Event) -> None:
     """
     redis = await create_redis_client()
     engine = create_async_engine(settings.database_url)
-    SessionFactory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    SessionFactory = async_sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
 
     logger.info("reaper_started")
 
@@ -54,7 +56,7 @@ async def run_reaper(stop_event: asyncio.Event) -> None:
                     stop_event.wait(),
                     timeout=REAPER_INTERVAL_SECONDS,
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 pass  # Normal — means stop_event wasn't set, continue looping
 
     finally:
@@ -66,7 +68,7 @@ async def run_reaper(stop_event: asyncio.Event) -> None:
 async def main() -> None:
     stop_event = asyncio.Event()
 
-    def handle_signal():
+    def handle_signal() -> None:
         logger.info("Reaper shutdown signal received")
         stop_event.set()
 

@@ -1,17 +1,16 @@
-import asyncio
 import json
-import structlog
 
+import structlog
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services import job_service
 from app.services.queue_service import (
     CONSUMER_GROUP,
-    QUEUE_NAMES,
     acknowledge,
     enqueue,
 )
+from app.services.scheduler import QUEUE_NAMES
 
 logger = structlog.get_logger()
 
@@ -19,9 +18,9 @@ logger = structlog.get_logger()
 # Critical jobs are re-queued fastest; normal jobs get more time before
 # the reaper intervenes, reducing unnecessary requeues for slow-but-alive workers.
 VISIBILITY_TIMEOUTS_MS: dict[str, int] = {
-    "critical": 30_000,   # 30 seconds
-    "high":     60_000,   # 60 seconds
-    "normal":  120_000,   # 120 seconds
+    "critical": 30_000,  # 30 seconds
+    "high": 60_000,  # 60 seconds
+    "normal": 120_000,  # 120 seconds
 }
 
 
@@ -38,21 +37,27 @@ async def recover_pending_messages(redis: Redis) -> int:
 
     for priority, stream in QUEUE_NAMES.items():
         timeout_ms = VISIBILITY_TIMEOUTS_MS[priority]
-        recovered_this_stream = 0   # ← track per stream
+        recovered_this_stream = 0  # ← track per stream
 
         try:
             pending = await redis.xpending_range(
-                stream, CONSUMER_GROUP,
-                min="-", max="+",
-                count=100, idle=timeout_ms,
+                stream,
+                CONSUMER_GROUP,
+                min="-",
+                max="+",
+                count=100,
+                idle=timeout_ms,
             )
 
             for entry in pending:
                 message_id = entry["message_id"]
                 claimed = await redis.xautoclaim(
-                    stream, CONSUMER_GROUP, "reaper",
+                    stream,
+                    CONSUMER_GROUP,
+                    "reaper",
                     min_idle_time=timeout_ms,
-                    start_id=message_id, count=1,
+                    start_id=message_id,
+                    count=1,
                 )
                 if claimed and claimed[1]:
                     _, messages = claimed[0], claimed[1]
@@ -67,7 +72,7 @@ async def recover_pending_messages(redis: Redis) -> int:
                         recovered_this_stream += 1
                         recovered += 1
 
-            if recovered_this_stream:     # ← now inside the for loop, after the try block
+            if recovered_this_stream:  # ← now inside the for loop, after the try block
                 logger.info(
                     "reaper_recovered_messages",
                     stream=stream,

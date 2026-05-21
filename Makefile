@@ -21,3 +21,12 @@ check-infra:
 
 test:
 	poetry run pytest tests/ -v
+
+ci:  ## Run the same checks as GitHub Actions CI (local verification)
+	poetry run ruff check .
+	poetry run mypy app/ --ignore-missing-imports --no-strict-optional
+	poetry run pytest tests/ -v
+
+
+load-test:  ## Start Locust load test UI (navigate to http://localhost:8089)
+	docker compose --profile load up locust

@@ -1,3 +1,4 @@
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -13,7 +14,7 @@ configure_logging()
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Startup
     app.state.redis = await create_redis_client()
     yield
@@ -38,7 +39,7 @@ app.mount("/metrics", metrics_app)
 
 
 @app.get("/health", tags=["ops"])
-async def health(request: Request):
+async def health(request: Request) -> JSONResponse:
     status = {"status": "ok", "redis": "ok"}
     http_status = 200
 

@@ -1,5 +1,7 @@
 import asyncio
+import random
 import uuid
+from typing import Any
 
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,7 +21,9 @@ async def _heartbeat_loop(
         await db.commit()
 
 
-def _backoff_seconds(retry_count: int, base: float = 1.0, max_delay: float = 60.0) -> float:
+def _backoff_seconds(
+    retry_count: int, base: float = 1.0, max_delay: float = 60.0
+) -> float:
     """
     Exponential backoff with full jitter.
 
@@ -31,9 +35,10 @@ def _backoff_seconds(retry_count: int, base: float = 1.0, max_delay: float = 60.
 
     retry_count=0 → 0-1s, 1 → 0-2s, 2 → 0-4s, 3 → 0-8s, 4 → 0-16s
     """
-    import random
-    delay = min(base * (2 ** retry_count), max_delay)
-    return delay * random.random()
+
+    delay = min(base * (2**retry_count), max_delay)
+    return float(delay * random.random())
+
 
 async def process_one(
     redis: Redis,
@@ -70,17 +75,17 @@ async def process_one(
         await job_service.mark_completed(db, job_id, result=result)
         await db.commit()
 
-    except asyncio.TimeoutError:
+    except TimeoutError:
         job = await job_service.get_job(db, job_id)
         retry_count = (job.retry_count if job else 0) + 1
         max_retries = job.max_retries if job else settings.max_retries
 
-        error_msg = (
-            f"Job timed out after {settings.job_timeout_seconds}s"
-        )
+        error_msg = f"Job timed out after {settings.job_timeout_seconds}s"
 
         if retry_count >= max_retries:
-            await job_service.mark_failed(db, job_id, error=error_msg, retry_count=retry_count)
+            await job_service.mark_failed(
+                db, job_id, error=error_msg, retry_count=retry_count
+            )
             await db.commit()
             await queue_service.enqueue_dlq(
                 redis,
@@ -91,12 +96,17 @@ async def process_one(
                 retry_count=retry_count,
             )
         else:
-            await job_service.mark_failed(db, job_id, error=error_msg, retry_count=retry_count)
+            await job_service.mark_failed(
+                db, job_id, error=error_msg, retry_count=retry_count
+            )
             await db.commit()
             delay = _backoff_seconds(retry_count)
             await asyncio.sleep(delay)
             await queue_service.enqueue(
-                redis, job_id=str(job_id), payload=message.payload, priority=message.priority
+                redis,
+                job_id=str(job_id),
+                payload=message.payload,
+                priority=message.priority,
             )
 
         await queue_service.acknowledge(redis, message.stream, message.message_id)
@@ -107,7 +117,9 @@ async def process_one(
         max_retries = job.max_retries if job else settings.max_retries
 
         if retry_count >= max_retries:
-            await job_service.mark_failed(db, job_id, error=str(e), retry_count=retry_count)
+            await job_service.mark_failed(
+                db, job_id, error=str(e), retry_count=retry_count
+            )
             await db.commit()
             await queue_service.enqueue_dlq(
                 redis,
@@ -118,12 +130,17 @@ async def process_one(
                 retry_count=retry_count,
             )
         else:
-            await job_service.mark_failed(db, job_id, error=str(e), retry_count=retry_count)
+            await job_service.mark_failed(
+                db, job_id, error=str(e), retry_count=retry_count
+            )
             await db.commit()
             delay = _backoff_seconds(retry_count)
             await asyncio.sleep(delay)
             await queue_service.enqueue(
-                redis, job_id=str(job_id), payload=message.payload, priority=message.priority
+                redis,
+                job_id=str(job_id),
+                payload=message.payload,
+                priority=message.priority,
             )
 
         await queue_service.acknowledge(redis, message.stream, message.message_id)
@@ -138,7 +155,7 @@ async def process_one(
     return True
 
 
-async def _dispatch(payload: dict) -> dict:
+async def _dispatch(payload: dict[str, Any]) -> dict[str, Any]:
     """Route a job to the correct handler based on its 'type' field."""
     job_type = payload.get("type", "unknown")
 

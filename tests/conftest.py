@@ -16,6 +16,7 @@ settings = get_settings()
 
 # ── Session-scoped: created ONCE, shared across all tests ──────────────────
 
+
 @pytest.fixture(scope="session")
 async def engine():
     """One engine for the entire test session."""
@@ -38,6 +39,7 @@ async def redis_client():
 
 # ── Autouse: runs before every test ────────────────────────────────────────
 
+
 @pytest.fixture(autouse=True)
 async def flush_redis(redis_client):
     """Flush Redis before each test — ensures isolation without reconnecting."""
@@ -46,6 +48,7 @@ async def flush_redis(redis_client):
 
 
 # ── Function-scoped: fresh per test, derived from session objects ───────────
+
 
 @pytest.fixture
 async def db(engine):
@@ -68,6 +71,7 @@ async def client(db, redis):
     Test HTTP client with DB and Redis injected.
     Overrides FastAPI's dependency system for the duration of each test.
     """
+
     async def override_get_db():
         yield db
 

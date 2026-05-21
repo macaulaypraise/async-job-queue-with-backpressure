@@ -1,6 +1,9 @@
+from collections.abc import Awaitable
+from typing import cast
+
 from redis.asyncio import Redis
 from redis.exceptions import ConnectionError as RedisConnectionError
-from typing import Awaitable, cast
+
 from app.config import get_settings
 
 settings = get_settings()

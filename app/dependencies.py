@@ -1,11 +1,11 @@
-from functools import lru_cache
-from typing import Annotated
+from typing import Annotated, cast
 
 from fastapi import Depends, Request
 from redis.asyncio import Redis
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import Settings, get_settings
-from app.core.database import AsyncSession, get_db
+from app.core.database import get_db
 
 # Settings dependency
 SettingsDep = Annotated[Settings, Depends(get_settings)]
@@ -19,7 +19,7 @@ async def get_redis(request: Request) -> Redis:
     Pulls the Redis client from FastAPI app state.
     The client is attached to app.state.redis in the lifespan function.
     """
-    return request.app.state.redis
+    return cast(Redis, request.app.state.redis)
 
 
 # Redis dependency

@@ -1,6 +1,27 @@
+# Environments
 .env
-.env
+.venv/
+venv/
+env/
+
+# Python Bytecode
 __pycache__/
-.mypy_cache/
+*.py[cod]
+*$py.class
+
+# Testing, Linting, & Type Checking Caches
 .pytest_cache/
+.ruff_cache/
+.mypy_cache/
 .coverage
+htmlcov/
+.pre-commit-cache/
+
+# IDEs and Editors
+.vscode/
+.idea/
+*.swp
+
+# OS generated files
+.DS_Store
+Thumbs.db

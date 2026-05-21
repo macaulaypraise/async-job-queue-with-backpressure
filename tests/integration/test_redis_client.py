@@ -3,7 +3,7 @@ from redis.asyncio import Redis
 
 
 async def test_redis_ping(redis: Redis):
-    result = await redis.ping() # type: ignore
+    result = await redis.ping()  # type: ignore
     assert result is True
 
 

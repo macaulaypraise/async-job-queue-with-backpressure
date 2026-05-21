@@ -1,13 +1,14 @@
 import asyncio
+import logging
 import signal
 import uuid
+
 import structlog
-import logging
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.config import get_settings
 from app.core.redis_client import close_redis_client, create_redis_client
-from app.services import job_service, queue_service, worker_service
+from app.services import worker_service
 
 logger = structlog.get_logger()
 settings = get_settings()
@@ -19,10 +20,13 @@ WORKER_ID = f"worker-{uuid.uuid4().hex[:8]}"
 async def run_worker(worker_id: str, stop_event: asyncio.Event) -> None:
     redis = await create_redis_client()
     engine = create_async_engine(settings.database_url)
-    SessionFactory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    SessionFactory = async_sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
 
     # Ensure all consumer groups exist before polling
     from app.services.queue_service import ensure_all_consumer_groups
+
     await ensure_all_consumer_groups(redis)
 
     logger.info("worker_started", worker_id=worker_id)
@@ -58,7 +62,7 @@ async def main() -> None:
     """
     stop_event = asyncio.Event()
 
-    def handle_signal():
+    def handle_signal() -> None:
         logger.info("Shutdown signal received")
         stop_event.set()
 

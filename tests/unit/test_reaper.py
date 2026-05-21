@@ -1,5 +1,5 @@
-from app.services.reaper_service import VISIBILITY_TIMEOUTS_MS
 from app.services.queue_service import QUEUE_NAMES
+from app.services.reaper_service import VISIBILITY_TIMEOUTS_MS
 
 
 def test_visibility_timeouts_defined_for_all_queues():

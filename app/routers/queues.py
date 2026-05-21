@@ -1,8 +1,10 @@
+from typing import Any
+
 from fastapi import APIRouter, HTTPException
 
 from app.config import get_settings
 from app.dependencies import RedisDep
-from app.schemas.job import QueueDepthResponse, WeightUpdateRequest, WeightResponse
+from app.schemas.job import QueueDepthResponse, WeightResponse, WeightUpdateRequest
 from app.services.queue_service import (
     get_dlq_depth,
     get_queue_depths,
@@ -14,7 +16,7 @@ router = APIRouter(prefix="/queues", tags=["queues"])
 
 
 @router.get("/metrics", response_model=QueueDepthResponse)
-async def queue_metrics(redis: RedisDep):
+async def queue_metrics(redis: RedisDep) -> QueueDepthResponse:
     settings = get_settings()
     depths = await get_queue_depths(redis)
     total = sum(depths.values())
@@ -33,7 +35,7 @@ async def queue_metrics(redis: RedisDep):
 
 
 @router.post("/dlq/{message_id}/replay", status_code=202)
-async def replay_dlq(message_id: str, redis: RedisDep):
+async def replay_dlq(message_id: str, redis: RedisDep) -> dict[str, Any]:
     """
     Replay a Dead Letter Queue message back into the main processing queue.
 
@@ -50,12 +52,13 @@ async def replay_dlq(message_id: str, redis: RedisDep):
 
 
 @router.get("/weights", response_model=WeightResponse)
-async def get_weights_endpoint(redis: RedisDep):
+async def get_weights_endpoint(redis: RedisDep) -> WeightResponse:
     """
     Return current scheduler weights.
     Shows Redis-stored values if set, otherwise config defaults.
     """
     from app.services.scheduler import get_weights
+
     weights = await get_weights(redis)
 
     # Determine if values came from Redis or config fallback
@@ -71,7 +74,7 @@ async def get_weights_endpoint(redis: RedisDep):
 
 
 @router.patch("/weights", response_model=WeightResponse)
-async def update_weights(body: WeightUpdateRequest, redis: RedisDep):
+async def update_weights(body: WeightUpdateRequest, redis: RedisDep) -> WeightResponse:
     """
     Update scheduler weights at runtime without redeploying.
 
@@ -94,7 +97,7 @@ async def update_weights(body: WeightUpdateRequest, redis: RedisDep):
 
 
 @router.delete("/weights")
-async def reset_weights(redis: RedisDep):
+async def reset_weights(redis: RedisDep) -> dict[str, Any]:
     """
     Reset weights to config defaults by removing Redis overrides.
     The scheduler falls back to config values automatically.

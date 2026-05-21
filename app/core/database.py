@@ -26,6 +26,7 @@ AsyncSessionFactory = async_sessionmaker(
 
 class Base(DeclarativeBase):
     """All ORM models inherit from this."""
+
     pass
 
 
