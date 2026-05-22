@@ -3,6 +3,7 @@ import uuid
 from fastapi import APIRouter, HTTPException
 
 from app.core.exceptions import BackpressureError
+from app.core.metrics import backpressure_rejections_total
 from app.dependencies import DbDep, RedisDep
 from app.models.job import Job
 from app.schemas.job import JobCreate, JobResponse
@@ -40,6 +41,7 @@ async def create_job(body: JobCreate, db: DbDep, redis: RedisDep) -> Job:
         return job
 
     except BackpressureError as e:
+        backpressure_rejections_total.inc()
         raise HTTPException(
             status_code=503,
             detail=str(e),

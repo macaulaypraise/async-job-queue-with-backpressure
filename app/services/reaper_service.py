@@ -4,6 +4,7 @@ import structlog
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.metrics import zombie_jobs_reaped_total
 from app.services import job_service
 from app.services.queue_service import (
     CONSUMER_GROUP,
@@ -103,4 +104,6 @@ async def reap_zombie_jobs(db: AsyncSession, redis: Redis) -> int:
         )
 
     await db.commit()
+    if zombies:
+        zombie_jobs_reaped_total.inc(len(zombies))
     return len(zombies)

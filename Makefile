@@ -30,3 +30,7 @@ ci:  ## Run the same checks as GitHub Actions CI (local verification)
 
 load-test:  ## Start Locust load test UI (navigate to http://localhost:8089)
 	docker compose --profile load up locust
+
+
+migrate:  ## Run database migrations (run after make dev if tables are missing)
+	docker compose exec app alembic upgrade head

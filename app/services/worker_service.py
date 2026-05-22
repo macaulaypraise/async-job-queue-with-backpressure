@@ -7,6 +7,7 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.core.metrics import jobs_processed_total
 from app.services import job_service, queue_service
 from app.services.queue_service import QueueMessage
 
@@ -74,6 +75,7 @@ async def process_one(
         await queue_service.acknowledge(redis, message.stream, message.message_id)
         await job_service.mark_completed(db, job_id, result=result)
         await db.commit()
+        jobs_processed_total.labels(status="completed").inc()
 
     except TimeoutError:
         job = await job_service.get_job(db, job_id)
@@ -87,6 +89,7 @@ async def process_one(
                 db, job_id, error=error_msg, retry_count=retry_count
             )
             await db.commit()
+            jobs_processed_total.labels(status="failed").inc()
             await queue_service.enqueue_dlq(
                 redis,
                 job_id=str(job_id),
@@ -100,6 +103,7 @@ async def process_one(
                 db, job_id, error=error_msg, retry_count=retry_count
             )
             await db.commit()
+            jobs_processed_total.labels(status="failed").inc()
             delay = _backoff_seconds(retry_count)
             await asyncio.sleep(delay)
             await queue_service.enqueue(
@@ -121,6 +125,7 @@ async def process_one(
                 db, job_id, error=str(e), retry_count=retry_count
             )
             await db.commit()
+            jobs_processed_total.labels(status="failed").inc()
             await queue_service.enqueue_dlq(
                 redis,
                 job_id=str(job_id),
@@ -134,6 +139,7 @@ async def process_one(
                 db, job_id, error=str(e), retry_count=retry_count
             )
             await db.commit()
+            jobs_processed_total.labels(status="failed").inc()
             delay = _backoff_seconds(retry_count)
             await asyncio.sleep(delay)
             await queue_service.enqueue(

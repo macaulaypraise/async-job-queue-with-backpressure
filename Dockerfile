@@ -11,8 +11,14 @@ ENV POETRY_INSTALLER_MAX_WORKERS=1 \
     POETRY_REQUESTS_TIMEOUT=120 \
     POETRY_RETRIES=5
 
+# 1. Create the safe zone
+RUN python -m venv /opt/venv
 
-RUN poetry config virtualenvs.in-project true \
+# 2. CRITICAL: Tell Poetry exactly where the active virtual environment is
+ENV VIRTUAL_ENV="/opt/venv"
+ENV PATH="/opt/venv/bin:$PATH"
+
+RUN poetry config virtualenvs.create false \
     && poetry install --only main --no-interaction --no-ansi --no-root
 
 COPY . .
@@ -22,21 +28,19 @@ FROM python:3.12-slim AS runtime
 
 WORKDIR /app
 
-
 RUN addgroup --system appgroup && adduser --system --ingroup appgroup appuser
 
-
-COPY --from=builder /app/.venv /app/.venv
+# 3. Copy the natively built safe zone
+COPY --from=builder /opt/venv /opt/venv
 COPY --from=builder /app/app ./app
 COPY --from=builder /app/migrations ./migrations
 COPY --from=builder /app/alembic.ini ./alembic.ini
 COPY --from=builder /app/pyproject.toml ./pyproject.toml
 
-
-ENV PATH="/app/.venv/bin:$PATH"
-
+# 4. Activate the environment for the runtime container
+ENV VIRTUAL_ENV="/opt/venv"
+ENV PATH="/opt/venv/bin:$PATH"
 
 USER appuser
 
-
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"]

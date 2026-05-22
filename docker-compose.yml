@@ -2,8 +2,8 @@ services:
   app:
     build: .
     command: >
-      sh -c "alembic upgrade head &&
-             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+      sh -c "/opt/venv/bin/alembic upgrade head &&
+             /opt/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     environment:
       - APP_ENV=development
       - REDIS_URL=redis://redis:6379/0
@@ -23,13 +23,12 @@ services:
     restart: unless-stopped
     volumes:
       - .:/app
-      - venv:/app/.venv
     ports:
       - "8000:8000"
 
   job_worker:
     build: .
-    command: python -m app.workers.job_worker
+    command: /opt/venv/bin/python -m app.workers.job_worker
     environment:
       - APP_ENV=development
       - REDIS_URL=redis://redis:6379/0
@@ -50,11 +49,10 @@ services:
     restart: unless-stopped
     volumes:
       - .:/app
-      - venv:/app/.venv
 
   reaper:
     build: .
-    command: python -m app.workers.reaper
+    command: /opt/venv/bin/python -m app.workers.reaper
     environment:
       - APP_ENV=development
       - REDIS_URL=redis://redis:6379/0
@@ -74,7 +72,6 @@ services:
     restart: unless-stopped
     volumes:
       - .:/app
-      - venv:/app/.venv
 
   redis:
     image: redis:7-alpine
@@ -138,5 +135,4 @@ services:
 
 volumes:
   postgres_data:
-  venv:
   grafana_data:
